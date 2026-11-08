@@ -36,7 +36,7 @@
         padding:8px 10px; background:#2a2a2a; border-radius:8px 8px 0 0;
         cursor:move; touch-action:none;
       ">
-        <span style="color:#4caf50; font-weight:bold;">♟️ Helper</span>
+        <span style="color:#4caf50; font-weight:bold;">♟️ SF10</span>
         <div>
           <button id="ch-min" style="background:#555; color:#fff; border:none; border-radius:3px; width:22px; height:22px; cursor:pointer; margin-right:4px;">—</button>
           <button id="ch-close" style="background:#d32f2f; color:#fff; border:none; border-radius:3px; width:22px; height:22px; cursor:pointer;">×</button>
@@ -60,48 +60,61 @@
     `;
     document.body.appendChild(panel);
 
-    // Close & Minimize & Drag (sama seperti sebelumnya)
     document.getElementById('ch-close').onclick = () => {
-      panel.remove(); worker.terminate(); URL.revokeObjectURL(workerUrl);
-      const ov = document.querySelector('.ch-arrow'); if (ov) ov.remove();
+      panel.remove();
+      worker.terminate();
+      URL.revokeObjectURL(workerUrl);
+      const ov = document.querySelector('.ch-arrow');
+      if (ov) ov.remove();
       window.__chessHelperLoaded = false;
     };
+
     let minimized = false;
     document.getElementById('ch-min').onclick = (e) => {
-      e.stopPropagation(); minimized = !minimized;
+      e.stopPropagation();
+      minimized = !minimized;
       document.getElementById('ch-body').style.display = minimized ? 'none' : 'block';
       document.getElementById('ch-min').innerText = minimized ? '+' : '—';
     };
+
+    // ==== TOMBOL GILIRAN MANUAL ====
+    let manualTurn = 'w'; // default Putih karena kamu main Putih
+    const turnBtn = document.getElementById('ch-turn-btn');
+    turnBtn.innerText = 'Putih';
+    turnBtn.onclick = () => {
+      manualTurn = manualTurn === 'w' ? 'b' : 'w';
+      turnBtn.innerText = manualTurn === 'w' ? 'Putih' : 'Hitam';
+      currentFen = '';
+      analyzing = false;
+    };
+
+    // ==== DRAG ====
     const header = document.getElementById('ch-header');
     let dragging = false, startX = 0, startY = 0, startLeft = 0, startTop = 0;
     const onStart = (e) => {
       if (e.target.tagName === 'BUTTON') return;
-      dragging = true; const rect = panel.getBoundingClientRect();
+      dragging = true;
+      const rect = panel.getBoundingClientRect();
       startLeft = rect.left; startTop = rect.top;
       panel.style.left = rect.left + 'px'; panel.style.top = rect.top + 'px'; panel.style.right = 'auto';
-      const p = e.touches ? e.touches[0] : e; startX = p.clientX; startY = p.clientY; e.preventDefault();
+      const p = e.touches ? e.touches[0] : e;
+      startX = p.clientX; startY = p.clientY;
+      e.preventDefault();
     };
     const onMove = (e) => {
-      if (!dragging) return; const p = e.touches ? e.touches[0] : e;
+      if (!dragging) return;
+      const p = e.touches ? e.touches[0] : e;
       panel.style.left = (startLeft + p.clientX - startX) + 'px';
-      panel.style.top = (startTop + p.clientY - startY) + 'px'; e.preventDefault();
+      panel.style.top = (startTop + p.clientY - startY) + 'px';
+      e.preventDefault();
     };
     const onEnd = () => { dragging = false; };
-    header.addEventListener('mousedown', onStart); header.addEventListener('touchstart', onStart, { passive: false });
-    document.addEventListener('mousemove', onMove); document.addEventListener('touchmove', onMove, { passive: false });
-    document.addEventListener('mouseup', onEnd); document.addEventListener('touchend', onEnd);
-
-    // ==== TOMBOL GILIRAN MANUAL ====
-    let manualTurn = null; 
-    const turnBtn = document.getElementById('ch-turn-btn');
-    turnBtn.onclick = () => {
-      if (manualTurn === null) manualTurn = 'w';
-      else if (manualTurn === 'w') manualTurn = 'b';
-      else manualTurn = null;
-      turnBtn.innerText = manualTurn === null ? 'Auto' : (manualTurn === 'w' ? 'Putih' : 'Hitam');
-      turnBtn.style.color = manualTurn === null ? '#888' : '#ffeb3b';
-      currentFen = ''; analyzing = false;
-    };
+    header.addEventListener('mousedown', onStart);
+    header.addEventListener('touchstart', onStart, { passive: false });
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('touchmove', onMove, { passive: false });
+    document.addEventListener('mouseup', onEnd);
+    document.addEventListener('touchend', onEnd);
 
     // ==== ENGINE ====
     worker.postMessage('uci');
@@ -130,36 +143,36 @@
       }
     };
 
-    // ==== BOARD & FEN LOGIC (DIPERBAIKI TOTAL) ====
+    // ==== BOARD DETECTION (FIX) ====
+    // Chess.com sekarang pakai <wc-chess-board id="board-play-computer">
     function findBoard() {
-      const candidates = document.querySelectorAll('chess-board, wc-chess-board, .board');
-      let best = null, maxArea = 0;
-      candidates.forEach(b => {
-        const r = b.getBoundingClientRect();
-        if (r.width * r.height > maxArea && r.width > 150) { maxArea = r.width * r.height; best = b; }
-      });
-      return best;
+      return document.querySelector('wc-chess-board') || 
+             document.querySelector('chess-board') || 
+             document.querySelector('#board-play-computer');
+    }
+
+    // Cek apakah papan di-flip
+    function isFlipped(board) {
+      return board.classList.contains('flipped');
+    }
+
+    // Konversi square-XX ke koordinat (file 0-7, rank 0-7)
+    // Chess.com: square-11 = a8 (kiri atas), square-88 = h1 (kanan bawah)
+    // Rumus: file = (n % 10) - 1, rank = 8 - floor(n / 10)
+    function sqToCoord(sqNum) {
+      const file = (sqNum % 10) - 1; // 0 = a, 7 = h
+      const rank = 8 - Math.floor(sqNum / 10); // 0 = rank 1, 7 = rank 8
+      return { file, rank };
     }
 
     function getFen() {
       const board = findBoard();
       if (!board) return null;
-      
-      // 1. Tentukan giliran
-      let turn = manualTurn;
-      if (!turn) {
-        // Coba deteksi dari move list (jika ada)
-        const moveList = document.querySelector('.vertical-move-list, .play-controller-move-list');
-        if (moveList) {
-          const moves = moveList.querySelectorAll('.node');
-          turn = moves.length % 2 === 0 ? 'w' : 'b'; // genap = putih, ganjil = hitam
-        } else {
-          turn = 'w'; // default
-        }
-      }
 
-      // 2. Baca bidak dengan konversi koordinat yang BENAR
-      // Chess.com: square-11 = a8 (kiri atas), square-88 = h1 (kanan bawah)
+      const flipped = isFlipped(board);
+      const turn = manualTurn;
+
+      // Baca semua bidak
       const map = {};
       board.querySelectorAll('.piece').forEach(p => {
         const cls = p.className.split(/\s+/);
@@ -168,24 +181,21 @@
         const n = parseInt(sqCls.replace('square-', ''));
         if (isNaN(n)) return;
         
-        // Rumus: file = (n % 10) - 1, rank = 8 - floor(n / 10)
-        // Contoh: square-52 -> file=1 (b), rank=8-5=3 -> b3 (BENAR)
-        const file = (n % 10) - 1; 
-        const rank = 8 - Math.floor(n / 10); 
-        
+        const { file, rank } = sqToCoord(n);
         const pieceCls = cls.find(c => /^[wb][pnbrqk]$/.test(c));
         if (!pieceCls) return;
+        
         const sym = pieceCls[0] === 'w' ? pieceCls[1].toUpperCase() : pieceCls[1];
         map[file + ',' + rank] = sym;
       });
 
       if (Object.keys(map).length === 0) return null;
 
-      // 3. Bangun FEN
+      // Build FEN - rank 8 (index 7) sampai 1 (index 0)
       let fen = '';
-      for (let r = 7; r >= 0; r--) { // rank 8 (7) sampai 1 (0)
+      for (let r = 7; r >= 0; r--) {
         let empty = 0;
-        for (let f = 0; f < 8; f++) { // file a (0) sampai h (7)
+        for (let f = 0; f < 8; f++) {
           const pc = map[f + ',' + r];
           if (pc) {
             if (empty) { fen += empty; empty = 0; }
@@ -195,8 +205,8 @@
         if (empty) fen += empty;
         if (r > 0) fen += '/';
       }
-      
-      // Castling (sederhana)
+
+      // Castling
       let castling = '';
       if (map['4,0'] === 'K') {
         if (map['7,0'] === 'R') castling += 'K';
@@ -211,25 +221,40 @@
       return fen + ' ' + turn + ' ' + castling + ' - 0 1';
     }
 
-    // ==== DRAW ARROW ====
+    // ==== DRAW ARROW (FIX) ====
     function drawArrow(uci) {
       const old = document.querySelector('.ch-arrow');
       if (old) old.remove();
       if (!uci || uci.length < 4) return;
 
-      const board = findBoard(); if (!board) return;
-      const orient = manualTurn || 'w'; // orientasi berdasarkan giliran manual/default
+      const board = findBoard();
+      if (!board) return;
+
+      const flipped = isFlipped(board);
       const from = uci.substring(0, 2);
       const to = uci.substring(2, 4);
 
-      function pct(sq, o) {
-        const f = 'abcdefgh'.indexOf(sq[0]);
-        const r = parseInt(sq[1]) - 1;
-        return o === 'w' ? { x: f * 100, y: (7 - r) * 100 } : { x: (7 - f) * 100, y: r * 100 };
+      // Konversi notasi UCI (e2) ke persentase CSS
+      // Kalau papan TIDAK flipped: a1 = kiri bawah
+      // Kalau papan FLIPPED: a1 = kanan atas (dari perspektif viewer)
+      function sqToPct(sq) {
+        const file = 'abcdefgh'.indexOf(sq[0]);
+        const rank = parseInt(sq[1]) - 1; // 0-7
+        let x, y;
+        if (!flipped) {
+          // Normal: a1 di kiri bawah
+          x = file * 100;
+          y = (7 - rank) * 100;
+        } else {
+          // Flipped: a1 di kanan atas
+          x = (7 - file) * 100;
+          y = rank * 100;
+        }
+        return { x, y };
       }
 
-      const p1 = pct(from, orient);
-      const p2 = pct(to, orient);
+      const p1 = sqToPct(from);
+      const p2 = sqToPct(to);
 
       const ov = document.createElement('div');
       ov.className = 'ch-arrow';
@@ -244,18 +269,29 @@
       const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
       const mk = document.createElementNS('http://www.w3.org/2000/svg', 'marker');
       mk.setAttribute('id', 'arr');
-      mk.setAttribute('markerWidth', '4'); mk.setAttribute('markerHeight', '4');
-      mk.setAttribute('refX', '2'); mk.setAttribute('refY', '2'); mk.setAttribute('orient', 'auto');
+      mk.setAttribute('markerWidth', '4');
+      mk.setAttribute('markerHeight', '4');
+      mk.setAttribute('refX', '2');
+      mk.setAttribute('refY', '2');
+      mk.setAttribute('orient', 'auto');
       const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
-      poly.setAttribute('points', '0,0 4,2 0,4'); poly.setAttribute('fill', '#3b82f6');
-      mk.appendChild(poly); defs.appendChild(mk); svg.appendChild(defs);
+      poly.setAttribute('points', '0,0 4,2 0,4');
+      poly.setAttribute('fill', '#3b82f6');
+      mk.appendChild(poly);
+      defs.appendChild(mk);
+      svg.appendChild(defs);
 
       const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-      line.setAttribute('x1', p1.x + 50); line.setAttribute('y1', p1.y + 50);
-      line.setAttribute('x2', p2.x + 50); line.setAttribute('y2', p2.y + 50);
-      line.setAttribute('stroke', '#3b82f6'); line.setAttribute('stroke-width', '20');
-      line.setAttribute('stroke-linecap', 'round'); line.setAttribute('marker-end', 'url(#arr)');
-      svg.appendChild(line); ov.appendChild(svg);
+      line.setAttribute('x1', p1.x + 50);
+      line.setAttribute('y1', p1.y + 50);
+      line.setAttribute('x2', p2.x + 50);
+      line.setAttribute('y2', p2.y + 50);
+      line.setAttribute('stroke', '#3b82f6');
+      line.setAttribute('stroke-width', '20');
+      line.setAttribute('stroke-linecap', 'round');
+      line.setAttribute('marker-end', 'url(#arr)');
+      svg.appendChild(line);
+      ov.appendChild(svg);
     }
 
     // ==== LOOP ====
@@ -264,11 +300,6 @@
       if (!fen) {
         document.getElementById('ch-status').innerText = 'Papan tidak terdeteksi';
         return;
-      }
-
-      const turnChar = fen.split(' ')[1];
-      if (!manualTurn) {
-        document.getElementById('ch-turn-btn').innerText = turnChar === 'w' ? 'Putih' : 'Hitam';
       }
 
       if (fen !== currentFen && !analyzing) {

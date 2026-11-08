@@ -80,7 +80,7 @@
     };
 
     // ==== TOMBOL GILIRAN MANUAL ====
-    let manualTurn = null; // null = auto, 'w' = putih, 'b' = hitam
+    let manualTurn = null; // null = auto
     const turnBtn = document.getElementById('ch-turn-btn');
     turnBtn.onclick = () => {
       if (manualTurn === null) manualTurn = 'w';
@@ -90,7 +90,6 @@
       turnBtn.innerText = manualTurn === null ? 'Auto' : (manualTurn === 'w' ? 'Putih' : 'Hitam');
       turnBtn.style.color = manualTurn === null ? '#888' : '#ffeb3b';
       
-      // Reset biar langsung analisis ulang
       currentFen = '';
       analyzing = false;
     };
@@ -175,17 +174,17 @@
       return best;
     }
 
-    // Deteksi giliran dari highlight langkah terakhir (teknik TitanChessEngine)
+    // Deteksi giliran dari highlight langkah terakhir [citation:3]
     function detectTurnFromHighlight(board) {
-      const lastMove = board.querySelector('.highlight, [class*="highlight"], .last-move');
-      if (!lastMove) return null;
+      const highlights = board.querySelectorAll('.highlight');
+      if (highlights.length === 0) return null;
       
-      // Cari bidak di kotak yang di-highlight
-      const piece = lastMove.querySelector('.piece');
-      if (piece) {
-        const cls = piece.className;
-        if (cls.includes('w')) return 'b'; // putih baru jalan, giliran hitam
-        if (cls.includes('b')) return 'w'; // hitam baru jalan, giliran putih
+      for (const hl of highlights) {
+        const piece = hl.querySelector('.piece');
+        if (piece) {
+          if (piece.classList.contains('w')) return 'b'; // putih baru jalan
+          if (piece.classList.contains('b')) return 'w'; // hitam baru jalan
+        }
       }
       return null;
     }
@@ -193,14 +192,13 @@
     function getTurn(board) {
       if (manualTurn) return manualTurn;
       
-      // Coba deteksi dari highlight
       const fromHighlight = detectTurnFromHighlight(board);
       if (fromHighlight) return fromHighlight;
       
       // Fallback: cek flipped class
       if (board.classList.contains('flipped')) return 'b';
       
-      // Default putih
+      // Default putih (karena biasanya kita main putih)
       return 'w';
     }
 
@@ -211,12 +209,14 @@
       const turn = getTurn(board);
       const map = {};
 
+      // Baca bidak
       board.querySelectorAll('.piece').forEach(p => {
         const cls = p.className.split(/\s+/);
         const sqCls = cls.find(c => c.startsWith('square-'));
         if (!sqCls) return;
         const n = parseInt(sqCls.replace('square-', ''));
         if (isNaN(n)) return;
+        // square-11 = a8, square-88 = h1
         const file = (n % 10) - 1;
         const rank = 8 - Math.floor(n / 10);
         const pieceCls = cls.find(c => /^[wb][pnbrqk]$/.test(c));
@@ -227,6 +227,7 @@
 
       if (Object.keys(map).length === 0) return null;
 
+      // Build FEN - urutan rank 8 sampai 1
       let fen = '';
       for (let r = 7; r >= 0; r--) {
         let empty = 0;
@@ -240,7 +241,20 @@
         if (empty) fen += empty;
         if (r > 0) fen += '/';
       }
-      return fen + ' ' + turn + ' - - 0 1';
+      
+      // Castling rights (sederhana: cek raja & benteng di posisi awal)
+      let castling = '';
+      if (map['4,0'] === 'K') {
+        if (map['7,0'] === 'R') castling += 'K';
+        if (map['0,0'] === 'R') castling += 'Q';
+      }
+      if (map['4,7'] === 'k') {
+        if (map['7,7'] === 'r') castling += 'k';
+        if (map['0,7'] === 'r') castling += 'q';
+      }
+      if (!castling) castling = '-';
+
+      return fen + ' ' + turn + ' ' + castling + ' - 0 1';
     }
 
     // ==== DRAW ARROW ====
@@ -312,8 +326,9 @@
       }
 
       const turnChar = fen.split(' ')[1];
+      // Update label giliran jika bukan manual
       if (!manualTurn) {
-        document.getElementById('ch-turn').innerText = turnChar === 'w' ? 'Putih' : 'Hitam';
+        document.getElementById('ch-turn-btn').innerText = turnChar === 'w' ? 'Putih' : 'Hitam';
       }
 
       if (fen !== currentFen && !analyzing) {
